@@ -11,11 +11,24 @@ const bookingRoutes = require('./routes/bookings')
 const app  = express()
 const PORT = process.env.PORT || 5000
 
+// Allowed origins
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://study-desk-neon.vercel.app',
+  process.env.CLIENT_URL,
+].filter(Boolean)
+
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (Postman, Thunder Client, Render health checks)
+    if (!origin) return callback(null, true)
+    if (allowedOrigins.includes(origin)) return callback(null, true)
+    callback(new Error(`CORS blocked: ${origin}`))
+  },
   credentials: true,
 }))
+
 app.use(express.json())
 app.use(cookieParser())
 
@@ -26,7 +39,16 @@ app.use('/api/bookings', bookingRoutes)
 
 // Health check
 app.get('/', (req, res) => {
-  res.json({ message: 'StudyDesk API is running' })
+  res.json({
+    message: 'StudyDesk API is running',
+    env:     process.env.NODE_ENV || 'development',
+  })
+})
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Global error:', err.message)
+  res.status(500).json({ message: err.message || 'Internal server error' })
 })
 
 // MongoDB + Start
