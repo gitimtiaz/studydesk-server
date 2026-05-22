@@ -5,7 +5,6 @@ const User    = require('../models/User')
 const authMiddleware = require('../middleware/authMiddleware')
 
 // POST /api/bookings
-// Private. Book a room with conflict detection.
 router.post('/', authMiddleware, async (req, res) => {
   try {
     const { roomId, date, startTime, endTime, totalCost, note } = req.body
@@ -14,14 +13,12 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'All booking fields are required' })
     }
 
-    // Check room exists
     const room = await Room.findById(roomId)
     if (!room) {
       return res.status(404).json({ message: 'Room not found' })
     }
 
     // Conflict check
-    // Block if any confirmed booking on same room+date overlaps the slot
     const conflict = await Booking.findOne({
       room:   roomId,
       date,
@@ -37,7 +34,6 @@ router.post('/', authMiddleware, async (req, res) => {
       })
     }
 
-    // Create booking
     const booking = await Booking.create({
       room:      roomId,
       userId:    req.user.id,
@@ -59,13 +55,64 @@ router.post('/', authMiddleware, async (req, res) => {
       $inc: { bookingCount: 1 },
     })
 
-    // Populate room data before sending back
     const populated = await booking.populate('room', 'name image floor hourlyRate')
 
     res.status(201).json({
       message: 'Room booked successfully!',
       booking: populated,
     })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message })
+  }
+})
+
+// GET /api/bookings/my-bookings
+// Private. Returns all bookings for the logged-in user.
+router.get('/my-bookings', authMiddleware, async (req, res) => {
+  try {
+    const bookings = await Booking.find({ userId: req.user.id })
+      .populate('room', 'name image floor hourlyRate')
+      .sort({ createdAt: -1 })
+
+    res.json({ bookings })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message })
+  }
+})
+
+// PATCH /api/bookings/:id/cancel
+// Private. Cancel a booking — only the booking owner can cancel.
+router.patch('/:id/cancel', authMiddleware, async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' })
+    }
+
+    if (booking.userId.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Forbidden — this is not your booking' })
+    }
+
+    if (booking.status === 'cancelled') {
+      return res.status(400).json({ message: 'Booking is already cancelled' })
+    }
+
+    // Update status to cancelled
+    booking.status = 'cancelled'
+    await booking.save()
+
+    // $pull booking id from user's bookings array
+    await User.findByIdAndUpdate(req.user.id, {
+      $pull: { bookings: booking._id },
+    })
+
+    // Decrement room bookingCount
+    await Room.findByIdAndUpdate(booking.room, {
+      $inc: { bookingCount: -1 },
+    })
+
+    res.json({ message: 'Booking cancelled', booking })
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message })
   }
