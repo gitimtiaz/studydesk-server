@@ -16,7 +16,7 @@ function setTokenCookie(res, userId) {
     httpOnly: true,
     secure:   process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge:   7 * 24 * 60 * 60 * 1000,
   })
 }
 
@@ -80,6 +80,42 @@ router.post('/login', async (req, res) => {
 
     res.json({
       message: 'Login successful',
+      user: {
+        id:    user._id,
+        name:  user.name,
+        email: user.email,
+        image: user.image,
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message })
+  }
+})
+
+// POST /api/auth/google
+router.post('/google', async (req, res) => {
+  try {
+    const { name, email, image } = req.body
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' })
+    }
+    
+    let user = await User.findOne({ email })
+
+    if (!user) {
+      user = await User.create({
+        name:  name  || 'Google User',
+        email,
+        image: image || '',
+        password: null,
+      })
+    }
+
+    setTokenCookie(res, user._id)
+
+    res.json({
+      message: 'Google login successful',
       user: {
         id:    user._id,
         name:  user.name,
