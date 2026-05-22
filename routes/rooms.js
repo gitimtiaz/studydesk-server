@@ -5,26 +5,36 @@ const authMiddleware = require('../middleware/authMiddleware')
 // GET /api/rooms
 router.get('/', async (req, res) => {
   try {
-    const { search, amenities } = req.query
+    const { search, amenities, minRate, maxRate } = req.query
     const filter = {}
 
-    if (search) {
-      filter.name = { $regex: search, $options: 'i' }
+    // Search by name, case insensitive regex
+    if (search && search.trim()) {
+      filter.name = { $regex: search.trim(), $options: 'i' }
     }
 
-    if (amenities) {
+    // Filter by amenities, room must have ALL selected amenities
+    if (amenities && amenities.trim()) {
       const list = amenities.split(',').map(a => a.trim()).filter(Boolean)
-      if (list.length) filter.amenities = { $in: list }
+      if (list.length) filter.amenities = { $all: list }
+    }
+
+    // Optional rate range filter
+    if (minRate || maxRate) {
+      filter.hourlyRate = {}
+      if (minRate) filter.hourlyRate.$gte = Number(minRate)
+      if (maxRate) filter.hourlyRate.$lte = Number(maxRate)
     }
 
     const rooms = await Room.find(filter).sort({ createdAt: -1 })
-    res.json({ rooms })
+
+    res.json({ rooms, count: rooms.length })
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message })
   }
 })
 
-// GET /api/rooms/latest
+//  GET /api/rooms/latest
 router.get('/latest', async (req, res) => {
   try {
     const rooms = await Room.find().sort({ createdAt: -1 }).limit(6)
@@ -84,7 +94,6 @@ router.post('/', authMiddleware, async (req, res) => {
 })
 
 // PUT /api/rooms/:id
-// Private. Owner only.
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
     const room = await Room.findById(req.params.id)
@@ -120,7 +129,6 @@ router.put('/:id', authMiddleware, async (req, res) => {
 })
 
 // DELETE /api/rooms/:id
-// Private. Owner only.
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const room = await Room.findById(req.params.id)
