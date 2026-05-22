@@ -1,6 +1,24 @@
 const router  = require('express').Router()
 const bcrypt  = require('bcryptjs')
+const jwt     = require('jsonwebtoken')
 const User    = require('../models/User')
+const authMiddleware = require('../middleware/authMiddleware')
+
+// Helper: sign token + set cookie
+function setTokenCookie(res, userId) {
+  const token = jwt.sign(
+    { userId },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  )
+
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days
+  })
+}
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
@@ -39,7 +57,7 @@ router.post('/register', async (req, res) => {
   }
 })
 
-// POST /api/auth/login 
+// POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body
@@ -58,8 +76,40 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password' })
     }
 
+    setTokenCookie(res, user._id)
+
     res.json({
       message: 'Login successful',
+      user: {
+        id:    user._id,
+        name:  user.name,
+        email: user.email,
+        image: user.image,
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message })
+  }
+})
+
+// POST /api/auth/logout
+router.post('/logout', (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  })
+  res.json({ message: 'Logged out successfully' })
+})
+
+// GET /api/auth/me (protected)
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password')
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+    res.json({
       user: {
         id:    user._id,
         name:  user.name,
