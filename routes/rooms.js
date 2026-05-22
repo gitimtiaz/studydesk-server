@@ -18,7 +18,6 @@ router.get('/', async (req, res) => {
     }
 
     const rooms = await Room.find(filter).sort({ createdAt: -1 })
-
     res.json({ rooms })
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message })
@@ -78,10 +77,65 @@ router.post('/', authMiddleware, async (req, res) => {
       ownerId:    req.user.id,
     })
 
-    res.status(201).json({
-      message: 'Room added successfully',
-      room,
-    })
+    res.status(201).json({ message: 'Room added successfully', room })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message })
+  }
+})
+
+// PUT /api/rooms/:id
+// Private. Owner only.
+router.put('/:id', authMiddleware, async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.id)
+
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' })
+    }
+
+    if (room.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Forbidden — you do not own this room' })
+    }
+
+    const { name, description, image, floor, capacity, hourlyRate, amenities } = req.body
+
+    const updated = await Room.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...(name        && { name }),
+        ...(description && { description }),
+        ...(image       && { image }),
+        ...(floor       && { floor }),
+        ...(capacity    && { capacity }),
+        ...(hourlyRate  && { hourlyRate: Number(hourlyRate) }),
+        ...(amenities   && { amenities }),
+      },
+      { new: true }
+    )
+
+    res.json({ message: 'Room updated successfully', room: updated })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message })
+  }
+})
+
+// DELETE /api/rooms/:id
+// Private. Owner only.
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.id)
+
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' })
+    }
+
+    if (room.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Forbidden — you do not own this room' })
+    }
+
+    await Room.findByIdAndDelete(req.params.id)
+
+    res.json({ message: 'Room deleted successfully' })
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message })
   }
